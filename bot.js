@@ -1,6 +1,7 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const puppeteer = require('puppeteer');
+const { performOcr, captureCaptchaImage } = require('./captcha');
 
 const client = new Client({
     authStrategy: new LocalAuth()
@@ -60,6 +61,17 @@ client.on('message', async message => {
                 return;
             }
 
+            // Capture CAPTCHA Image
+            const captchaImageSelector = 'img#captchaimg'; // Correct selector
+            const captchaImagePath = 'captcha.png';
+            await captureCaptchaImage(frame, captchaImageSelector, captchaImagePath);
+
+            // Perform OCR
+            const captchaText = await performOcr(captchaImagePath);
+            console.log('CAPTCHA Text:', captchaText);
+
+            // Fill CAPTCHA and submit
+            await frame.type('input[name="cap"]', captchaText); // Correct input selector
             console.log('Typing username and password...');
             await frame.type('input[name="uid"]', username);
             await frame.type('input[name="pwd"]', password);
@@ -71,7 +83,6 @@ client.on('message', async message => {
 
             console.log('Fetching data...');
             const fetchedData = await frame.evaluate(() => {
-                // Replace 'yourSelectorHere' with the actual selector you want to use
                 return document.querySelector('yourSelectorHere')?.innerText || 'No data found';
             });
 
