@@ -1,3 +1,4 @@
+const sharp = require('sharp');
 const Tesseract = require('tesseract.js');
 const fs = require('fs');
 
@@ -36,7 +37,29 @@ async function captureCaptchaImage(frame, selector, path) {
     }
 }
 
+/**
+ * Preprocesses the CAPTCHA image for better OCR results.
+ * @param {string} inputPath - The path to the input image file.
+ * @param {string} outputPath - The path to save the preprocessed image.
+ * @returns {Promise<void>}
+ */
+async function preprocessCaptchaImage(inputPath, outputPath) {
+    console.log('Preprocessing CAPTCHA image...');
+    try {
+        await sharp(inputPath)
+            .resize(300) // Adjust the size based on your needs
+            .grayscale()
+            .normalize()
+            .toFile(outputPath);
+        console.log('CAPTCHA image preprocessed successfully');
+    } catch (error) {
+        console.error('Error during image preprocessing:', error);
+        throw new Error('Image preprocessing failed');
+    }
+}
+
 module.exports = {
     performOcr,
-    captureCaptchaImage
+    captureCaptchaImage,
+    preprocessCaptchaImage
 };

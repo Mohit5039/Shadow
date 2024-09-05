@@ -1,7 +1,7 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const puppeteer = require('puppeteer');
-const { performOcr, captureCaptchaImage } = require('./captcha');
+const { performOcr, captureCaptchaImage, preprocessCaptchaImage } = require('./captcha');
 
 const client = new Client({
     authStrategy: new LocalAuth()
@@ -66,8 +66,12 @@ client.on('message', async message => {
             const captchaImagePath = 'captcha.png';
             await captureCaptchaImage(frame, captchaImageSelector, captchaImagePath);
 
+            // Preprocess CAPTCHA Image
+            const preprocessedCaptchaPath = 'preprocessed_captcha.png';
+            await preprocessCaptchaImage(captchaImagePath, preprocessedCaptchaPath);
+
             // Perform OCR
-            const captchaText = await performOcr(captchaImagePath);
+            const captchaText = await performOcr(preprocessedCaptchaPath);
             console.log('CAPTCHA Text:', captchaText);
 
             // Fill CAPTCHA and submit
