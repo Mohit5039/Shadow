@@ -1,7 +1,9 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const puppeteer = require('puppeteer');
-const { performOcr, captureCaptchaImage, preprocessCaptchaImage } = require('./captcha');
+const fs = require('fs');
+const path = require('path');
+const { performOcr, captureCaptchaImage, preprocessCaptchaImage, deleteFile } = require('./captcha');
 
 const client = new Client({
     authStrategy: new LocalAuth()
@@ -50,7 +52,7 @@ client.on('message', async message => {
             });
 
             console.log('Waiting for navigation to complete...');
-            await page.waitForNavigation({ waitUntil: 'networkidle2' });
+            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }); // 5 seconds timeout
 
             console.log('Accessing the login frame...');
             const frame = page.frames().find(f => f.url().includes('student_login.php'));
@@ -61,40 +63,217 @@ client.on('message', async message => {
                 return;
             }
 
-            // Capture CAPTCHA Image
-            const captchaImageSelector = 'img#captchaimg'; // Correct selector
-            const captchaImagePath = 'captcha.png';
-            await captureCaptchaImage(frame, captchaImageSelector, captchaImagePath);
+            const maxAttempts = 3;
+            let attempt = 0;
+            let loginSuccess = false;
 
-            // Preprocess CAPTCHA Image
-            const preprocessedCaptchaPath = 'preprocessed_captcha.png';
-            await preprocessCaptchaImage(captchaImagePath, preprocessedCaptchaPath);
+            while (attempt < maxAttempts) {
+                try {
+                    // Capture and preprocess CAPTCHA image
+                    const captchaImagePath = 'captcha.png';
+                    const preprocessedCaptchaPath = 'preprocessed_captcha.png';
 
-            // Perform OCR
-            const captchaText = await performOcr(preprocessedCaptchaPath);
-            console.log('CAPTCHA Text:', captchaText);
+                    await captureCaptchaImage(frame, 'img#captchaimg', captchaImagePath);
+                    await preprocessCaptchaImage(captchaImagePath, preprocessedCaptchaPath);
+                    const captchaText = await performOcr(preprocessedCaptchaPath);
 
-            // Fill CAPTCHA and submit
-            await frame.type('input[name="cap"]', captchaText); // Correct input selector
-            console.log('Typing username and password...');
-            await frame.type('input[name="uid"]', username);
-            await frame.type('input[name="pwd"]', password);
+                    // Delete old files
+                    await deleteFile(captchaImagePath);
+                    await deleteFile(preprocessedCaptchaPath);
 
-            console.log('Logging in...');
-            await frame.click('input[type="submit"]');
+                    console.log('Typing username and password...');
+                    await frame.type('input[name="cap"]', captchaText);
+                    await frame.type('input[name="uid"]', username);
+                    await frame.type('input[name="pwd"]', password);
+                    await frame.click('input[type="submit"]');
 
-            await page.waitForNavigation({ waitUntil: 'networkidle2' });
+                    // Send login successful message with options
+                    await message.reply(
+                        `Login successful!\n\nWhat would you like to fetch?\n` +
+                        `1) Attendance\n` +
+                        `2) Result\n` +
+                        `3) Admit Card\n` +
+                        `4) Timetable\n` +
+                        `5) Others`
+                    );
 
-            console.log('Fetching data...');
-            const fetchedData = await frame.evaluate(() => {
-                return document.querySelector('yourSelectorHere')?.innerText || 'No data found';
-            });
+                    // Handle user command
+                    const commandTimeout = 30000; // 30 seconds
+                    const commandCollector = new Map(); // To store user responses
 
-            message.reply(`Fetched data: ${fetchedData}`);
+                    const handleUserResponse = async (nextMessage) => {
+                        if (nextMessage.from === message.from) {
+                            const command = nextMessage.body.trim();
+                            switch (command) {
+                                case '1':
+                                    await nextMessage.reply('Fetching Attendance...');
+                                    // Implement fetch attendance logic here
+                                    break;
+                                case '2':
+                                    await nextMessage.reply('Fetching Result...');
+                                    // Implement fetch result logic here
+                                    break;
+                                case '3':
+                                    await nextMessage.reply('Fetching Admit Card...');
+                                    // Implement fetch admit card logic here
+                                    break;
+                                case '4':
+                                    await nextMessage.reply('Fetching Timetable...');
+                                    // Implement fetch timetable logic here
+                                    break;
+                                case '5':
+                                    await nextMessage.reply('Fetching Others...');
+                                    // Implement fetch others logic here
+                                    break;
+                                case '0':
+                                    // Send meme image
+                                    const memePath = './command/0 meme.webp'; // Path to your meme image
+                                    const memeMedia = MessageMedia.fromFilePath(memePath);
+                                    await nextMessage.reply('Here is a meme for you!', memeMedia);
+                                    break;
+                                default:
+                                    await nextMessage.reply('Bro, I only know counting till 5. Please press any number from 1 to 5.');
+                                    break;
+                            }
+                            // Remove event listener after processing command
+                            client.removeListener('message', handleUserResponse);
+                        }
+                    };
+
+                    // Add event listener for user response
+                    client.on('message', handleUserResponse);
+
+                    // Set timeout to remove the event listener if no response is received
+                    setTimeout(() => {
+                        client.removeListener('message', handleUserResponse);
+                        message.reply('No response received. Please try again.');
+                    }, commandTimeout);
+
+                    loginSuccess = true;
+                    break; // Exit loop if login is successful
+                } catch (error) {
+                    console.error(`Attempt ${attempt + 1} failed:`, error);
+                }
+
+                attempt++;
+                if (attempt < maxAttempts) {
+                    // Re-enter credentials
+                    await frame.evaluate(() => {
+                        document.querySelector('input[name="uid"]').value = '';
+                        document.querySelector('input[name="pwd"]').value = '';
+                    });
+                }
+            }
+
+            if (!loginSuccess) {
+                // Manual CAPTCHA process
+                console.log('All automated attempts failed. Requesting manual CAPTCHA input...');
+                const captchaImagePath = 'captcha.png';
+                const captchaImageBuffer = fs.readFileSync(captchaImagePath);
+
+                await message.reply('Please solve the CAPTCHA and send the text back.');
+                await message.reply({ content: 'CAPTCHA Image:', files: [captchaImageBuffer] });
+
+                // Wait for manual CAPTCHA input with a timeout
+                let manualCaptchaReceived = false;
+
+                const manualCaptchaTimeout = setTimeout(() => {
+                    if (!manualCaptchaReceived) {
+                        message.reply('Manual CAPTCHA input timed out. Please try again.');
+                    }
+                }, 90000); // 90 seconds
+
+                client.on('message', async response => {
+                    if (response.from === message.from) {
+                        const captchaText = response.body;
+                        if (captchaText) {
+                            manualCaptchaReceived = true;
+                            clearTimeout(manualCaptchaTimeout);
+                            await frame.type('input[name="cap"]', captchaText);
+                            await frame.type('input[name="uid"]', username);
+                            await frame.type('input[name="pwd"]', password);
+                            await frame.click('input[type="submit"]');
+
+                            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }); // 5 seconds timeout
+
+                            loginSuccess = await frame.evaluate(() => {
+                                return document.body.innerText.includes('Welcome');
+                            });
+
+                            if (loginSuccess) {
+                                await message.reply(
+                                    `Login successful!\n\nWhat would you like to fetch?\n` +
+                                    `1) Attendance\n` +
+                                    `2) Result\n` +
+                                    `3) Admit Card\n` +
+                                    `4) Timetable\n` +
+                                    `5) Others`
+                                );
+                                // Handle user command
+                                const commandTimeout = 30000; // 30 seconds
+                                const commandCollector = new Map(); // To store user responses
+
+                                const handleUserResponse = async (nextMessage) => {
+                                    if (nextMessage.from === message.from) {
+                                        const command = nextMessage.body.trim();
+                                        switch (command) {
+                                            case '1':
+                                                await nextMessage.reply('Fetching Attendance...');
+                                                // Implement fetch attendance logic here
+                                                break;
+                                            case '2':
+                                                await nextMessage.reply('Fetching Result...');
+                                                // Implement fetch result logic here
+                                                break;
+                                            case '3':
+                                                await nextMessage.reply('Fetching Admit Card...');
+                                                // Implement fetch admit card logic here
+                                                break;
+                                            case '4':
+                                                await nextMessage.reply('Fetching Timetable...');
+                                                // Implement fetch timetable logic here
+                                                break;
+                                            case '5':
+                                                await nextMessage.reply('Fetching Others...');
+                                                // Implement fetch others logic here
+                                                break;
+                                            case '0':
+                                                // Send meme image
+                                                const memePath = './command/0 meme.webp'; // Path to your meme image
+                                                const memeMedia = MessageMedia.fromFilePath(memePath);
+                                                await nextMessage.reply('Here is a meme for you!', memeMedia);
+                                                break;
+                                            default:
+                                                await nextMessage.reply('Bro, I only know counting till 5. Please press any number from 1 to 5.');
+                                                break;
+                                        }
+                                        // Remove event listener after processing command
+                                        client.removeListener('message', handleUserResponse);
+                                    }
+                                };
+
+                                // Add event listener for user response
+                                client.on('message', handleUserResponse);
+
+                                // Set timeout to remove the event listener if no response is received
+                                setTimeout(() => {
+                                    client.removeListener('message', handleUserResponse);
+                                    message.reply('No response received. Please try again.');
+                                }, commandTimeout);
+                            } else {
+                                await message.reply('Login failed with manual CAPTCHA. Please try again.');
+                            }
+                        } else {
+                            await message.reply('No CAPTCHA text received. Please try again.');
+                        }
+                    }
+                });
+            }
+
             await browser.close();
         } catch (error) {
-            console.error('Error during data fetching:', error);
-            message.reply('Error during data fetching. Please try again.');
+            console.error('Error during login process:', error);
+            message.reply('An error occurred during the login process. Please try again later.');
         }
     }
 });

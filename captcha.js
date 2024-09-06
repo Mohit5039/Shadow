@@ -1,6 +1,6 @@
 const sharp = require('sharp');
 const Tesseract = require('tesseract.js');
-const fs = require('fs');
+const fs = require('fs').promises; // Using promises for async file operations
 
 /**
  * Performs OCR on the given image file and returns the extracted text.
@@ -58,8 +58,23 @@ async function preprocessCaptchaImage(inputPath, outputPath) {
     }
 }
 
+/**
+ * Deletes a file from the filesystem.
+ * @param {string} filePath - The path to the file to be deleted.
+ * @returns {Promise<void>}
+ */
+async function deleteFile(filePath) {
+    try {
+        await fs.unlink(filePath);
+        console.log(`Deleted file: ${filePath}`);
+    } catch (error) {
+        console.error(`Error deleting file: ${filePath}`, error);
+    }
+}
+
 module.exports = {
     performOcr,
     captureCaptchaImage,
-    preprocessCaptchaImage
+    preprocessCaptchaImage,
+    deleteFile
 };
