@@ -12,6 +12,8 @@ const handleAdmitCard = require('./command/admitCard');
 const handleTimetable = require('./command/timetable');
 const handleOthers = require('./command/others');
 const { handleInvalidCommand, handleMemeCommand } = require('./command/invalidAndMeme');
+const { isDebugUser, logDebugInfo } = require('./DebugAccess');
+const { activateDebugMode } = require('./debug');
 
 const client = new Client({
     authStrategy: new LocalAuth()
@@ -25,14 +27,35 @@ client.on('ready', () => {
     console.log('Client is ready!');
 });
 
+let debugMode = false; // Initialize debug mode
+
 client.on('message', async message => {
     console.log('Message received:', message.body);
 
+    
+    
+        // Debug command
+        if (message.body === '/debug') {
+            if (isDebugUser(message.from)) {
+                activateDebugMode(message); // Pass the message object
+                await message.reply('Debug mode activated. Welcome fatass . hope you are doing great .');
+                console.log('Debug mode activated for:', message.from);
+            } else {
+                await message.reply('Ni**a ,  you are not part of the squad');
+                console.log('Unauthorized debug access attempt by:', message.from);
+            }
+            return;
+        }
+    
+    
+       
+    // Respond to ping
     if (message.body === 'ping') {
         message.reply('pong');
         console.log('Responding to ping...');
     }
 
+    // Existing login command and other message handling...
     if (message.body.startsWith('/login')) {
         const [_, username, password] = message.body.split(' ');
 
@@ -141,7 +164,7 @@ client.on('message', async message => {
 
                     setTimeout(() => {
                         client.removeListener('message', handleUserResponse);
-                        message.reply('Thats your 2 min timeout login again for if you want to fetch more data from ims .');
+                        message.reply('That\'s your 2 min timeout; log in again if you want to fetch more data from IMS.');
                     }, commandTimeout);
 
                     loginSuccess = true;
@@ -157,6 +180,53 @@ client.on('message', async message => {
                     });
                 }
             }
+
+            // **New Code Starts Here: Manual Captcha Handling**
+            if (!loginSuccess) {
+                // Capture captcha image to send to user
+                await captureCaptchaImage(frame, 'img#captchaimg', captchaImagePath);
+                await message.reply('Please solve the CAPTCHA below:');
+                
+                // Read the image file and send it as a media message
+                const media = MessageMedia.fromFilePath(captchaImagePath);
+                await client.sendMessage(message.from, media);
+                
+                // Wait for user input
+                const captchaResponseListener = async (nextMessage) => {
+                    if (nextMessage.from === message.from) {
+                        const userInput = nextMessage.body.trim();
+                        
+                        // Fill in user input and submit
+                        await frame.type('input[name="cap"]', userInput);
+                        await frame.click('input[type="submit"]');
+                        
+                        // Check for successful login based on page content or URL
+                        const loginSuccessful = await page.evaluate(() => {
+                            // Replace this condition with a check specific to the successful login state
+                            return document.body.innerText.includes('Successful Login Message or Element');
+                        });
+
+                        if (loginSuccessful) {
+                            await message.reply('Login successful! What would you like to fetch?');
+                            // Handle further commands as before...
+                        } else {
+                            await message.reply('Your CAPTCHA input was incorrect. Please try again.');
+                            
+
+                            // Send a new captcha image
+                            await captureCaptchaImage(frame, 'img#captchaimg', captchaImagePath);
+                            const newMedia = MessageMedia.fromFilePath(captchaImagePath);
+                            await client.sendMessage(message.from, newMedia);
+                        }
+
+                        // Remove listener after processing
+                        client.removeListener('message', captchaResponseListener);
+                    }
+                };
+
+                client.on('message', captchaResponseListener);
+            }
+            // **New Code Ends Here**
 
             if (!loginSuccess) {
                 await message.reply('Login failed after multiple attempts. Please try again.');
