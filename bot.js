@@ -135,7 +135,7 @@ client.on('message', async message => {
                             const command = nextMessage.body.trim();
                             switch (command) {
                                 case '1':
-                                    await handleAttendance(nextMessage, frame);
+                                    await handleAttendance(nextMessage, frame, client);
                                     break;
                                 case '2':
                                     await handleResult(nextMessage, frame);
@@ -181,7 +181,7 @@ client.on('message', async message => {
                 }
             }
 
-            // **New Code Starts Here: Manual Captcha Handling**
+            // New Code Starts Here: Manual Captcha Handling
             if (!loginSuccess) {
                 // Capture captcha image to send to user
                 await captureCaptchaImage(frame, 'img#captchaimg', captchaImagePath);

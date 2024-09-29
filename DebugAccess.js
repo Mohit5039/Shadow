@@ -1,6 +1,6 @@
 // DebugAccess.js
 let debugMode = false; // Initialize debug mode state
-const debugAccessList = ['917340295092', '5678']; // WhatsApp numbers with debug access
+const debugAccessList = ['917340295092', '919548636336']; // WhatsApp numbers with debug access
 
 function stripDomain(userNumber) {
     return userNumber.split('@')[0]; // Remove everything after '@'
