@@ -1,6 +1,6 @@
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
-const puppeteer = require('puppeteer');
+const { chromium } = require('playwright'); // Import Playwright
 const fs = require('fs');
 const path = require('path');
 const { performOcr, captureCaptchaImage, preprocessCaptchaImage, deleteFile } = require('./captcha');
@@ -32,23 +32,19 @@ let debugMode = false; // Initialize debug mode
 client.on('message', async message => {
     console.log('Message received:', message.body);
 
-    
-    
-        // Debug command
-        if (message.body === '/debug') {
-            if (isDebugUser(message.from)) {
-                activateDebugMode(message); // Pass the message object
-                await message.reply('Debug mode activated. Welcome fatass . hope you are doing great .');
-                console.log('Debug mode activated for:', message.from);
-            } else {
-                await message.reply('Ni**a ,  you are not part of the squad');
-                console.log('Unauthorized debug access attempt by:', message.from);
-            }
-            return;
+    // Debug command
+    if (message.body === '/debug') {
+        if (isDebugUser(message.from)) {
+            activateDebugMode(message); // Pass the message object
+            await message.reply('Debug mode activated. Welcome fatass. Hope you are doing great.');
+            console.log('Debug mode activated for:', message.from);
+        } else {
+            await message.reply('Ni**a, you are not part of the squad');
+            console.log('Unauthorized debug access attempt by:', message.from);
         }
-    
-    
-       
+        return;
+    }
+
     // Respond to ping
     if (message.body === 'ping') {
         message.reply('pong');
@@ -65,11 +61,11 @@ client.on('message', async message => {
         }
 
         try {
-            const browser = await puppeteer.launch({ headless: false });
+            const browser = await chromium.launch({ headless: false }); // Use Playwright's Chromium
             const page = await browser.newPage();
 
             console.log('Navigating to login page...');
-            await page.goto('https://www.imsnsit.org/imsnsit/', { waitUntil: 'networkidle2' });
+            await page.goto('https://www.imsnsit.org/imsnsit/', { waitUntil: 'networkidle' });
 
             console.log('Clicking on Student Login...');
             await page.evaluate(() => {
@@ -83,10 +79,11 @@ client.on('message', async message => {
             });
 
             console.log('Waiting for navigation to complete...');
-            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 5000 }); // 5 seconds timeout
+            await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 5000 }); // 5 seconds timeout
 
             console.log('Accessing the login frame...');
-            const frame = page.frames().find(f => f.url().includes('student_login.php'));
+            const frames = page.frames();
+            const frame = frames.find(f => f.url().includes('student_login.php'));
 
             if (!frame) {
                 console.error('Login frame not found');
@@ -113,9 +110,9 @@ client.on('message', async message => {
                     await deleteFile(preprocessedCaptchaPath);
 
                     console.log('Typing username and password...');
-                    await frame.type('input[name="cap"]', captchaText);
-                    await frame.type('input[name="uid"]', username);
-                    await frame.type('input[name="pwd"]', password);
+                    await frame.fill('input[name="cap"]', captchaText);
+                    await frame.fill('input[name="uid"]', username);
+                    await frame.fill('input[name="pwd"]', password);
                     await frame.click('input[type="submit"]');
 
                     // Send login successful message with options
@@ -197,7 +194,7 @@ client.on('message', async message => {
                         const userInput = nextMessage.body.trim();
                         
                         // Fill in user input and submit
-                        await frame.type('input[name="cap"]', userInput);
+                        await frame.fill('input[name="cap"]', userInput);
                         await frame.click('input[type="submit"]');
                         
                         // Check for successful login based on page content or URL
@@ -211,7 +208,6 @@ client.on('message', async message => {
                             // Handle further commands as before...
                         } else {
                             await message.reply('Your CAPTCHA input was incorrect. Please try again.');
-                            
 
                             // Send a new captcha image
                             await captureCaptchaImage(frame, 'img#captchaimg', captchaImagePath);

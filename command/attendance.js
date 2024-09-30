@@ -1,27 +1,25 @@
-const puppeteer = require('puppeteer');
-
 const handleAttendance = async (message, frame, client) => {
     // Provide dropdowns for year and semester
-    const years = ['2021', '2022', '2023']; // Example years
+    const years = ['2021', '2022', '2023', '2024']; // Updated to include 2024
     const semesters = ['1', '2']; // Example semesters
 
     // Send message to user with year dropdown options
     await message.reply(`Please select your year:\n${years.map((y, index) => `${index + 1}) ${y}`).join('\n')}`);
-    
+
     // Wait for user response for year
     const yearResponse = await waitForUserResponse(message.from, client);
     const selectedYear = years[parseInt(yearResponse.body.trim()) - 1];
 
     // Send message to user with semester dropdown options
     await message.reply(`Please select your semester:\n${semesters.map((s, index) => `${index + 1}) ${s}`).join('\n')}`);
-    
+
     // Wait for user response for semester
     const semesterResponse = await waitForUserResponse(message.from, client);
     const selectedSemester = semesters[parseInt(semesterResponse.body.trim()) - 1];
 
     // Navigate to attendance page
     console.log('Navigating to attendance page...');
-    await frame.goto('https://www.imsnsit.org/imsnsit/', { waitUntil: 'networkidle2' });
+    await frame.goto('https://www.imsnsit.org/imsnsit/', { waitUntil: 'networkidle' });
 
     // Re-fetch frame after navigation to avoid detached frame errors
     const attendanceFrame = frame.frames().find(f => f.url().includes('attendance_page.php')); // Adjust this to the correct URL
