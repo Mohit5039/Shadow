@@ -1,62 +1,80 @@
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
-const { chromium } = require('playwright'); // Import Playwright
-const fs = require('fs');
-const path = require('path');
-const { performOcr, captureCaptchaImage, preprocessCaptchaImage, deleteFile } = require('./captcha');
+import pkg from '@whiskeysockets/baileys';
+const { makeWASocket, MessageMedia, useMultiFileAuthState } = pkg; // Destructure from the default export
+
+import qrcode from 'qrcode-terminal';
+import { chromium } from 'playwright'; // Import Playwright
+import fs from 'fs';
+import path from 'path';
+import { performOcr, captureCaptchaImage, preprocessCaptchaImage, deleteFile } from './captcha.js'; // Ensure to add .js extension
 
 // Import command handlers
-const handleAttendance = require('./command/attendance');
-const handleResult = require('./command/result');
-const handleAdmitCard = require('./command/admitCard');
-const handleTimetable = require('./command/timetable');
-const handleOthers = require('./command/others');
-const { handleInvalidCommand, handleMemeCommand } = require('./command/invalidAndMeme');
-const { isDebugUser, logDebugInfo } = require('./DebugAccess');
-const { activateDebugMode } = require('./debug');
+import handleAttendance from './command/attendance.js';
+import handleResult from './command/result.js';
+import handleAdmitCard from './command/admitCard.js';
+import handleTimetable from './command/timetable.js';
+import handleOthers from './command/others.js';
+import { handleInvalidCommand, handleMemeCommand } from './command/invalidAndMeme.js';
+import { isDebugUser, logDebugInfo } from './DebugAccess.js';
+import { activateDebugMode } from './debug.js';
 
-const client = new Client({
-    authStrategy: new LocalAuth()
+// Initialize the client using makeWASocket with multi-file auth state
+const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
+const client = makeWASocket({
+    printQRInTerminal: true,
+    auth: state,
+    
 });
 
-client.on('qr', qr => {
+// Handle QR code generation
+client.ev.on('qr', qr => {
     qrcode.generate(qr, { small: true });
 });
 
-client.on('ready', () => {
-    console.log('Client is ready!');
+// Handle client readiness
+client.ev.on('connection.update', (update) => {
+    const { connection } = update;
+    if (connection === 'open') {
+        console.log('Client is ready!');
+    }
 });
+
+// Save credentials when updated
+client.ev.on('creds.update', saveCreds);
 
 let debugMode = false; // Initialize debug mode
 
-client.on('message', async message => {
-    console.log('Message received:', message.body);
+// Handle incoming messages
+client.ev.on('messages.upsert', async ({ messages }) => {
+    const message = messages[0];
+    if (!message.message) return; // Check if message is not empty
+
+    console.log('Message received:', message.message.conversation);
 
     // Debug command
-    if (message.body === '/debug') {
-        if (isDebugUser(message.from)) {
+    if (message.message.conversation === '/debug') {
+        if (isDebugUser(message.key.remoteJid)) {
             activateDebugMode(message); // Pass the message object
-            await message.reply('Debug mode activated. Welcome fatass. Hope you are doing great.');
-            console.log('Debug mode activated for:', message.from);
+            await client.sendMessage(message.key.remoteJid, { text: 'Debug mode activated. Welcome fatass. Hope you are doing great.' });
+            console.log('Debug mode activated for:', message.key.remoteJid);
         } else {
-            await message.reply('Ni**a, you are not part of the squad');
-            console.log('Unauthorized debug access attempt by:', message.from);
+            await client.sendMessage(message.key.remoteJid, { text: 'Ni**a, you are not part of the squad' });
+            console.log('Unauthorized debug access attempt by:', message.key.remoteJid);
         }
         return;
     }
 
     // Respond to ping
-    if (message.body === 'ping') {
-        message.reply('pong');
+    if (message.message.conversation === 'ping') {
+        await client.sendMessage(message.key.remoteJid, { text: 'pong' });
         console.log('Responding to ping...');
     }
 
     // Existing login command and other message handling...
-    if (message.body.startsWith('/login')) {
-        const [_, username, password] = message.body.split(' ');
+    if (message.message.conversation.startsWith('/login')) {
+        const [_, username, password] = message.message.conversation.split(' ');
 
         if (!username || !password) {
-            message.reply('Please provide both username and password.');
+            await client.sendMessage(message.key.remoteJid, { text: 'Please provide both username and password.' });
             return;
         }
 
@@ -116,20 +134,20 @@ client.on('message', async message => {
                     await frame.click('input[type="submit"]');
 
                     // Send login successful message with options
-                    await message.reply(
-                        `Login successful!\n\nWhat would you like to fetch?\n` +
-                        `1) Attendance\n` +
-                        `2) Result\n` +
-                        `3) Admit Card\n` +
-                        `4) Timetable\n` +
-                        `5) Others`
+                    await client.sendMessage(message.key.remoteJid,
+                        { text: `Login successful!\n\nWhat would you like to fetch?\n` +
+                            `1) Attendance\n` +
+                            `2) Result\n` +
+                            `3) Admit Card\n` +
+                            `4) Timetable\n` +
+                            `5) Others` }
                     );
 
                     // Handle user command
                     const commandTimeout = 120000; // 120 seconds
                     const handleUserResponse = async (nextMessage) => {
-                        if (nextMessage.from === message.from) {
-                            const command = nextMessage.body.trim();
+                        if (nextMessage.key.remoteJid === message.key.remoteJid) {
+                            const command = nextMessage.message.conversation.trim();
                             switch (command) {
                                 case '1':
                                     await handleAttendance(nextMessage, frame, client);
@@ -153,15 +171,15 @@ client.on('message', async message => {
                                     await handleInvalidCommand(nextMessage);
                                     break;
                             }
-                            client.removeListener('message', handleUserResponse);
+                            client.removeListener('messages.upsert', handleUserResponse);
                         }
                     };
 
-                    client.on('message', handleUserResponse);
+                    client.ev.on('messages.upsert', handleUserResponse);
 
                     setTimeout(() => {
-                        client.removeListener('message', handleUserResponse);
-                        message.reply('That\'s your 2 min timeout; log in again if you want to fetch more data from IMS.');
+                        client.removeListener('messages.upsert', handleUserResponse);
+                        client.sendMessage(message.key.remoteJid, { text: 'That\'s your 2 min timeout; log in again if you want to fetch more data from IMS.' });
                     }, commandTimeout);
 
                     loginSuccess = true;
@@ -182,16 +200,16 @@ client.on('message', async message => {
             if (!loginSuccess) {
                 // Capture captcha image to send to user
                 await captureCaptchaImage(frame, 'img#captchaimg', captchaImagePath);
-                await message.reply('Please solve the CAPTCHA below:');
+                await client.sendMessage(message.key.remoteJid, { text: 'Please solve the CAPTCHA below:' });
                 
                 // Read the image file and send it as a media message
                 const media = MessageMedia.fromFilePath(captchaImagePath);
-                await client.sendMessage(message.from, media);
+                await client.sendMessage(message.key.remoteJid, media);
                 
                 // Wait for user input
                 const captchaResponseListener = async (nextMessage) => {
-                    if (nextMessage.from === message.from) {
-                        const userInput = nextMessage.body.trim();
+                    if (nextMessage.key.remoteJid === message.key.remoteJid) {
+                        const userInput = nextMessage.message.conversation.trim();
                         
                         // Fill in user input and submit
                         await frame.fill('input[name="cap"]', userInput);
@@ -204,36 +222,35 @@ client.on('message', async message => {
                         });
 
                         if (loginSuccessful) {
-                            await message.reply('Login successful! What would you like to fetch?');
+                            await client.sendMessage(message.key.remoteJid, { text: 'Login successful! What would you like to fetch?' });
                             // Handle further commands as before...
                         } else {
-                            await message.reply('Your CAPTCHA input was incorrect. Please try again.');
+                            await client.sendMessage(message.key.remoteJid, { text: 'Your CAPTCHA input was incorrect. Please try again.' });
 
                             // Send a new captcha image
                             await captureCaptchaImage(frame, 'img#captchaimg', captchaImagePath);
                             const newMedia = MessageMedia.fromFilePath(captchaImagePath);
-                            await client.sendMessage(message.from, newMedia);
+                            await client.sendMessage(message.key.remoteJid, newMedia);
                         }
 
-                        // Remove listener after processing
-                        client.removeListener('message', captchaResponseListener);
+                        client.removeListener('messages.upsert', captchaResponseListener); // Cleanup listener
                     }
                 };
-
-                client.on('message', captchaResponseListener);
-            }
-            // **New Code Ends Here**
-
-            if (!loginSuccess) {
-                await message.reply('Login failed after multiple attempts. Please try again.');
+                client.ev.on('messages.upsert', captchaResponseListener); // Listen for user CAPTCHA response
             }
 
-            await browser.close();
+            await browser.close(); // Close the browser after the process
         } catch (error) {
-            console.error('Login error:', error);
-            await message.reply('An error occurred during login. Please try again.');
+            console.error('Error during login:', error);
+            await client.sendMessage(message.key.remoteJid, { text: 'An error occurred during the login process. Please try again later.' });
         }
     }
 });
 
-client.initialize();
+// Handle other incoming messages or commands...
+
+// Start the client
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error);
+});
+

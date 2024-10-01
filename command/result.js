@@ -1,5 +1,5 @@
 // result.js
-async function handleResult(message, frame) {
+export default async function handleResult(message, frame) {
     try {
         await message.reply('Fetching Result...');
         // Implement fetch result logic here
@@ -11,5 +11,3 @@ async function handleResult(message, frame) {
         await message.reply('Failed to fetch result. Please try again.');
     }
 }
-
-module.exports = handleResult;

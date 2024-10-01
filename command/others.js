@@ -1,5 +1,5 @@
 // others.js
-async function handleOthers(message, frame) {
+export default async function handleOthers(message, frame) {
     try {
         await message.reply('Fetching Others...');
         // Implement fetch others logic here
@@ -11,5 +11,3 @@ async function handleOthers(message, frame) {
         await message.reply('Failed to fetch others. Please try again.');
     }
 }
-
-module.exports = handleOthers;

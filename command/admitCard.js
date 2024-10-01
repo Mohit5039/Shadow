@@ -1,5 +1,5 @@
 // admitCard.js
-async function handleAdmitCard(message, frame) {
+export default async function handleAdmitCard(message, frame) {
     try {
         await message.reply('Fetching Admit Card...');
         // Implement fetch admit card logic here
@@ -11,5 +11,3 @@ async function handleAdmitCard(message, frame) {
         await message.reply('Failed to fetch admit card. Please try again.');
     }
 }
-
-module.exports = handleAdmitCard;

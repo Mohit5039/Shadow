@@ -27,7 +27,7 @@ function logDebugInfo(message) {
 }
 
 // Export the functions for use in bot.js
-module.exports = {
+export {
     isDebugUser,
     activateDebugMode,
     deactivateDebugMode,

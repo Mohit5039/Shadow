@@ -1,5 +1,5 @@
 // timetable.js
-async function handleTimetable(message, frame) {
+export default async function handleTimetable(message, frame) {
     try {
         await message.reply('Fetching Timetable...');
         // Implement fetch timetable logic here
@@ -11,5 +11,3 @@ async function handleTimetable(message, frame) {
         await message.reply('Failed to fetch timetable. Please try again.');
     }
 }
-
-module.exports = handleTimetable;

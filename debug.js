@@ -1,20 +1,14 @@
 // debug.js
 
-function activateDebugMode(message) {
+export function activateDebugMode(message) {
     console.log(`Debug mode activated by ${message.from} at ${new Date()}`);
-    //  logic 
+    // logic
 }
 
-function logDebugInfo(info) {
+export function logDebugInfo(info) {
     console.log(`Debug Info: ${info}`);
 }
 
-function sendDebugInfoToUser(client, message, debugInfo) {
+export function sendDebugInfoToUser(client, message, debugInfo) {
     client.sendMessage(message.from, `Debug Info: ${debugInfo}`);
 }
-
-module.exports = {
-    activateDebugMode,
-    logDebugInfo,
-    sendDebugInfoToUser,
-};
