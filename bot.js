@@ -146,14 +146,9 @@ async function startClient() {
                         await frame.click('input[type="submit"]');
 
                         // Send login successful message with options
-                        await client.sendMessage(message.key.remoteJid,
-                            { text: `Login successful!\n\nWhat would you like to fetch?\n` +
-                                `1) Attendance\n` +
-                                `2) Result\n` +
-                                `3) Admit Card\n` +
-                                `4) Timetable\n` +
-                                `5) Others` }
-                        );
+                        await client.sendMessage(message.key.remoteJid, { 
+                            text: 'Login successful!\n\nWhat would you like to fetch?\n1) Attendance\n2) Result\n3) Admit Card\n4) Timetable\n5) Others' 
+                        });
 
                         // Handle user command
                         const commandTimeout = 120000; // 120 seconds
@@ -179,28 +174,47 @@ async function startClient() {
                                     return; // Exit if command is not valid
                                 }
 
-                                switch (command) {
-                                    case '1':
-                                        await handleAttendance(message, frame, client);
-                                        break;
-                                    case '2':
-                                        await handleResult(message, frame);
-                                        break;
-                                    case '3':
-                                        await handleAdmitCard(message, frame);
-                                        break;
-                                    case '4':
-                                        await handleTimetable(message, frame);
-                                        break;
-                                    case '5':
-                                        await handleOthers(message, frame);
-                                        break;
-                                    case '0':
-                                        await handleMemeCommand(message);
-                                        break;
-                                    default:
-                                        await handleInvalidCommand(message);
-                                        break;
+                                // Flag to indicate if we are in attendance mode
+                                let attendanceMode = false;
+
+                                // Check if the command is in attendance mode
+                                if (attendanceMode) {
+                                    switch (command) {
+                                        case '1':
+                                        case '2':
+                                        case '3':
+                                        case '4':
+                                        case '5':
+                                            await handleAttendanceInput(command, message, frame, client); // Handle attendance-related inputs
+                                            return; // Exit to avoid triggering main features
+                                        case '0':
+                                            attendanceMode = false; // Reset attendance mode
+                                            await client.sendMessage(message.key.remoteJid, { text: 'Returning to main features...' });
+                                            return; // Exit to return to main features
+                                        default:
+                                            // Removed invalid command feedback
+                                            return; // Simply exit without sending a message
+                                    }
+                                } else {
+                                    switch (command) {
+                                        case '1':
+                                            attendanceMode = true; // Set attendance mode to true
+                                            await handleAttendance(message, frame, client);
+                                            break;
+                                        case '2':
+                                        case '3':
+                                        case '4':
+                                        case '5':
+                                            await client.sendMessage(message.key.remoteJid, { text: 'You are currently not in attendance mode. Please enter attendance mode to access these features.' });
+                                            return; // Exit if trying to access commands while not in attendance mode
+                                        case '0':
+                                            // Directly return to main features since '0' is valid in non-attendance mode
+                                            await client.sendMessage(message.key.remoteJid, { text: 'Returning to main features...' });
+                                            return;
+                                        default:
+                                            await handleInvalidCommand(message);
+                                            break;
+                                    }
                                 }
                             }
                         };
@@ -221,38 +235,27 @@ async function startClient() {
 
                         client.ev.on('messages.upsert', responseListener);
 
-                        loginSuccess = true;
-                        break;
-                    } catch (error) {
-                        console.error(`Attempt ${attempt + 1} failed:`, error);
-                    }
-
-                    attempt++;
-                    if (attempt < maxAttempts) {
-                        await frame.evaluate(() => {
-                            document.querySelector('input[name="cap"]').value = ''; // Clear CAPTCHA input
-                        });
+                        loginSuccess = true; // Mark as successful login
+                        break; // Exit the loop on successful login
+                    } catch (err) {
+                        console.error('Login attempt failed:', err);
+                        attempt++;
+                        if (attempt >= maxAttempts) {
+                            await client.sendMessage(message.key.remoteJid, { text: 'Login failed after maximum attempts. Please try again later.' });
+                        }
                     }
                 }
 
-                // Manual Captcha Handling
-                if (!loginSuccess) {
-                    // Capture captcha image to send to user
-                    const captchaImagePath = 'captcha.png';
+                await browser.close(); // Close the browser after handling
 
-                    await captureCaptchaImage(frame, 'img#captchaimg', captchaImagePath);
-                    await client.sendMessage(message.key.remoteJid, { text: 'Login failed. Please solve this CAPTCHA: ' });
-                    await client.sendMessage(message.key.remoteJid, MessageMedia.fromFilePath(captchaImagePath));
-                }
-
-                await browser.close();
             } catch (error) {
-                console.error('Error during login process:', error);
-                await client.sendMessage(message.key.remoteJid, { text: 'Error during login process. Please try again.' });
+                console.error('Error during login:', error);
+                await client.sendMessage(message.key.remoteJid, { text: 'An error occurred during login. Please try again.' });
             }
-            return; // Exit after processing login
+
+            return; // Exit after processing the login command
         }
     });
 }
 
-startClient();
+startClient().catch(console.error);
