@@ -14,7 +14,7 @@ import handleResult from './command/result.js';
 import handleAdmitCard from './command/admitCard.js';
 import handleTimetable from './command/timetable.js';
 import handleOthers from './command/others.js';
-import { handleInvalidCommand, handleMemeCommand } from './command/invalidAndMeme.js';
+//import { handleInvalidCommand } from './command/invalidAndMeme.js';
 import { isDebugUser } from './DebugAccess.js';
 import { activateDebugMode } from './debug.js';
 
@@ -53,6 +53,9 @@ async function startClient() {
 
     // Save credentials when updated
     client.ev.on('creds.update', saveCreds);
+
+    // Flag to indicate if we are in attendance mode
+    let attendanceMode = false; 
 
     // Handle incoming messages
     client.ev.on('messages.upsert', async ({ messages }) => {
@@ -158,24 +161,16 @@ async function startClient() {
                                 return; // Exit if no valid message is found
                             }
 
-                            const message = nextMessage.messages[0]; // Access the first message
-                            const key = message.key; // Get the message key
-
-                            if (!key || !key.remoteJid) {
-                                console.error('Invalid message structure or missing remoteJid:', message);
-                                return; // Exit if the structure is not valid
-                            }
+                            const userMessage = nextMessage.messages[0]; // Access the first message
+                            const key = userMessage.key; // Get the message key
 
                             // Check if the message comes from the same user
                             if (key.remoteJid === message.key.remoteJid) {
-                                const command = message.message?.conversation?.trim(); // Optional chaining to safely access conversation
+                                const command = userMessage.message?.conversation?.trim(); // Optional chaining to safely access conversation
                                 if (!command) {
                                     console.error('Command is undefined or empty');
                                     return; // Exit if command is not valid
                                 }
-
-                                // Flag to indicate if we are in attendance mode
-                                let attendanceMode = false;
 
                                 // Check if the command is in attendance mode
                                 if (attendanceMode) {
@@ -185,34 +180,38 @@ async function startClient() {
                                         case '3':
                                         case '4':
                                         case '5':
-                                            await handleAttendanceInput(command, message, frame, client); // Handle attendance-related inputs
+                                            await handleAttendance(command, userMessage, frame, client); // Handle attendance-related inputs
                                             return; // Exit to avoid triggering main features
                                         case '0':
                                             attendanceMode = false; // Reset attendance mode
                                             await client.sendMessage(message.key.remoteJid, { text: 'Returning to main features...' });
                                             return; // Exit to return to main features
                                         default:
-                                            // Removed invalid command feedback
-                                            return; // Simply exit without sending a message
+                                            return;
                                     }
                                 } else {
                                     switch (command) {
                                         case '1':
                                             attendanceMode = true; // Set attendance mode to true
-                                            await handleAttendance(message, frame, client);
+                                            await handleAttendance(message, frame, client); // Pass client
                                             break;
                                         case '2':
+                                            await handleResult(message, client);
+                                            break;
                                         case '3':
+                                            await handleAdmitCard(message, client);
+                                            break;
                                         case '4':
+                                            await handleTimetable(message, client);
+                                            break;
                                         case '5':
-                                            await client.sendMessage(message.key.remoteJid, { text: 'You are currently not in attendance mode. Please enter attendance mode to access these features.' });
-                                            return; // Exit if trying to access commands while not in attendance mode
+                                            await handleOthers(message, client);
+                                            break;
                                         case '0':
                                             // Directly return to main features since '0' is valid in non-attendance mode
                                             await client.sendMessage(message.key.remoteJid, { text: 'Returning to main features...' });
                                             return;
                                         default:
-                                            await handleInvalidCommand(message);
                                             break;
                                     }
                                 }
@@ -235,27 +234,31 @@ async function startClient() {
 
                         client.ev.on('messages.upsert', responseListener);
 
-                        loginSuccess = true; // Mark as successful login
-                        break; // Exit the loop on successful login
-                    } catch (err) {
-                        console.error('Login attempt failed:', err);
+                        loginSuccess = true; // Exit loop on success
+                        break; // Exit the login attempt loop
+                    } catch (error) {
+                        console.error('Login attempt failed:', error);
+                        await client.sendMessage(message.key.remoteJid, { text: `Login attempt ${attempt + 1} failed. ${maxAttempts - attempt - 1} attempts remaining.` });
                         attempt++;
-                        if (attempt >= maxAttempts) {
-                            await client.sendMessage(message.key.remoteJid, { text: 'Login failed after maximum attempts. Please try again later.' });
-                        }
                     }
                 }
 
-                await browser.close(); // Close the browser after handling
+                if (!loginSuccess) {
+                    await client.sendMessage(message.key.remoteJid, { text: 'Login failed after maximum attempts. Please try again later.' });
+                }
 
+                await browser.close();
             } catch (error) {
-                console.error('Error during login:', error);
+                console.error('Error during login process:', error);
                 await client.sendMessage(message.key.remoteJid, { text: 'An error occurred during login. Please try again.' });
             }
+            return; // Exit to avoid further processing
 
-            return; // Exit after processing the login command
+        // Handle other messages if necessary...
         }
     });
+
+    return client; // Return the client instance
 }
 
-startClient().catch(console.error);
+startClient(); // Start the client
