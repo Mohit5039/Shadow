@@ -1,73 +1,76 @@
-let isInAttendanceMode = false; // Track if the bot is in attendance selection mode
-let selectedYear = null; // Keep track of year once selected
+export const state = {
+  attendanceMode: false,
+  isInAttendanceMode: false, // TRACK IF THE BOT IS IN ATTENDANCE SELECTION MODE
+  selectedYear: null, // KEEP TRACK OF YEAR ONCE SELECTED
+};
+
+const years = ["2021", "2022", "2023", "2024"]; // YEAR OPTIONS
+const semesters = ["1", "2", "3", "4", "5", "6", "7", "8"]; // SEMESTER OPTIONS
 
 const handleAttendance = async (message, frame, client) => {
-  console.log("Message received in handleAttendance:", message); // Debugging
+  //console.log("Message received in handleAttendance:", message); // DEBUGGING
 
   const userJID = message.key.remoteJid;
 
-  // Updated year options as per your website's pull-down menu
-  const years = ["2022-23", "2021-22", "2023-24", "2024-25", "2025-26", "2026-27", "2026-28"];
-  const semesters = ["1", "2", "3", "4", "5", "6", "7", "8"]; // All 8 semesters
-
-  // Check if the input is in attendance mode first
-  if (isInAttendanceMode) {
-    const userInput = message.message.conversation.trim();
-
-    // Step 1: If year is not yet selected, move to year selection
-    if (!selectedYear) {
-      const selectedYearValue = await getYearInput(userJID, client, years);
-      if (selectedYearValue === 'exit') {
-        isInAttendanceMode = false; // Reset state and exit
-        return;
-      }
-      selectedYear = selectedYearValue; // Store the selected year
-      // After selecting year, directly go to semester selection
-      const selectedSemester = await getSemesterInput(userJID, client, semesters);
-      if (selectedSemester === 'exit') {
-        isInAttendanceMode = false; // Reset state and exit
-        selectedYear = null; // Reset year for next usage
-        return;
-      }
-
-      // Step 3: Once both year and semester are selected, navigate and fetch data
-      await handleAttendanceNavigation(frame, userJID, client, selectedYear, selectedSemester);
-      isInAttendanceMode = false; // Reset state after completing attendance process
-      selectedYear = null; // Reset year for next usage
-    } else {
-      // If year is already selected, continue with semester selection
-      const selectedSemester = await getSemesterInput(userJID, client, semesters);
-      if (selectedSemester === 'exit') {
-        isInAttendanceMode = false; // Reset state and exit
-        return;
-      }
-
-      // Step 3: Once both year and semester are selected, navigate and fetch data
-      await handleAttendanceNavigation(frame, userJID, client, selectedYear, selectedSemester);
-      isInAttendanceMode = false; // Reset state after completing attendance process
-      selectedYear = null; // Reset year for next usage
-    }
-    return; // Exit after handling attendance input
+  // If not in attendance mode, enter it
+  if (!state.isInAttendanceMode) {
+    state.isInAttendanceMode = true;
+    await client.sendMessage(userJID, { text: "Entering attendance mode." });
   }
 
-  // Check if user input triggers attendance mode
-  if (message.message.conversation.trim() === '1') {
-    isInAttendanceMode = true; // Enter attendance mode
-    // Directly move to year selection without unnecessary message
-    const selectedYearValue = await getYearInput(userJID, client, years);
-    if (selectedYearValue === 'exit') {
-      isInAttendanceMode = false; // Reset state and exit
-      return;
-    }
-    selectedYear = selectedYearValue; // Store the selected year
-    return; // Exit after processing the initial selection
+  // Start with year selection
+  const selectedYearValue = await getYearInput(userJID, client, years);
+  if (selectedYearValue === 'exit') {
+    state.isInAttendanceMode = false;
+    return;
+  }
+  state.selectedYear = selectedYearValue;
+
+  // Move to semester selection
+  const selectedSemester = await getSemesterInput(userJID, client, semesters);
+  if (selectedSemester === 'exit') {
+    state.isInAttendanceMode = false;
+    state.selectedYear = null;
+    return;
   }
 
-  // If not in attendance mode, do nothing or handle invalid command
-  await handleInvalidCommand(message); // Ensure it falls back if something unexpected occurs
+  // Navigate and fetch data
+  await handleAttendanceNavigation(frame, userJID, client, state.selectedYear, selectedSemester);
+  
+  // Reset state after completing attendance process
+  state.isInAttendanceMode = false;
+  state.selectedYear = null;
 };
 
-// Function for year input handling
+///////////////////////////////////////
+const waitForUserResponse = async (userJID, client, timeout = 60000) => {
+  return new Promise((resolve, reject) => {
+      // Set a timer to reject the promise after the specified timeout
+      const timer = setTimeout(() => {
+          reject(new Error('User did not respond within 60 seconds.'));
+      }, timeout);
+
+      // Function to handle incoming messages
+      const messageListener = (message) => {
+          if (message.key.remoteJid === userJID) {
+              clearTimeout(timer); // Clear the timer on success
+              client.ev.off('messages.upsert', messageListener); // Remove the listener
+              resolve(message); // Resolve with the message
+          }
+      };
+
+      // Add the message listener to the client
+      client.ev.on('messages.upsert', (m) => {
+          // Handle the case when a message is received
+          if (m.messages && m.messages.length > 0) {
+              m.messages.forEach(msg => messageListener(msg));
+          }
+      });
+  });
+};
+
+//////////////////////////////////////////////////////
+// FUNCTION FOR YEAR INPUT HANDLING
 const getYearInput = async (userJID, client, years) => {
   let selectedYear = null;
   while (!selectedYear) {
@@ -76,13 +79,11 @@ const getYearInput = async (userJID, client, years) => {
         .map((y, index) => `${index + 1}) ${y}`)
         .join("\n")}\n0) Return to main menu`,
     });
-
     const yearResponse = await waitForUserResponse(userJID, client);
     const selectedYearIndex = parseInt(yearResponse.message.conversation.trim()) - 1;
-
-    if (selectedYearIndex === -1) return 'exit'; // Exit to main menu
+    if (selectedYearIndex === -1) return 'exit'; // EXIT TO MAIN MENU
     if (selectedYearIndex >= 0 && selectedYearIndex < years.length) {
-      selectedYear = years[selectedYearIndex]; // Valid year selected
+      selectedYear = years[selectedYearIndex]; // VALID YEAR SELECTED
     } else {
       await client.sendMessage(userJID, { text: "Invalid selection. Please try again." });
     }
@@ -90,7 +91,7 @@ const getYearInput = async (userJID, client, years) => {
   return selectedYear;
 };
 
-// Function for semester input handling
+// FUNCTION FOR SEMESTER INPUT HANDLING
 const getSemesterInput = async (userJID, client, semesters) => {
   let selectedSemester = null;
   while (!selectedSemester) {
@@ -99,17 +100,13 @@ const getSemesterInput = async (userJID, client, semesters) => {
         .map((s, index) => `${index + 1}) ${s}`)
         .join("\n")}\n0) Return to main menu\ny) Go back to year selection`,
     });
-
     const semesterResponse = await waitForUserResponse(userJID, client);
     const selectedSemesterInput = semesterResponse.message.conversation.trim();
-
-    if (selectedSemesterInput === '0') return 'exit'; // Exit to main menu
-    if (selectedSemesterInput === 'y') return 'retryYear'; // Retry year selection
-
+    if (selectedSemesterInput === '0') return 'exit'; // EXIT TO MAIN MENU
+    if (selectedSemesterInput === 'y') return 'retryYear'; // RETRY YEAR SELECTION
     const selectedSemesterIndex = parseInt(selectedSemesterInput) - 1;
-
     if (selectedSemesterIndex >= 0 && selectedSemesterIndex < semesters.length) {
-      selectedSemester = semesters[selectedSemesterIndex]; // Valid semester selected
+      selectedSemester = semesters[selectedSemesterIndex]; // VALID SEMESTER SELECTED
     } else {
       await client.sendMessage(userJID, { text: "Invalid selection. Please try again." });
     }
@@ -117,66 +114,28 @@ const getSemesterInput = async (userJID, client, semesters) => {
   return selectedSemester;
 };
 
-// Function to handle navigation after selection
+// FUNCTION TO HANDLE NAVIGATION AFTER SELECTION
 const handleAttendanceNavigation = async (frame, userJID, client, selectedYear, selectedSemester) => {
-  console.log("Navigating to attendance page...");
+  console.log("Navigating to attendance page..."); // DEBUGGING
 
+  // NAVIGATE TO ATTENDANCE PAGE AFTER RECEIVING BOTH INPUTS
   await frame.goto("https://www.imsnsit.org/imsnsit/", {
     waitUntil: "networkidle",
   });
 
-  const attendanceFrame = frame
-    .frames()
-    .find((f) => f.url().includes("attendance_page.php")); // Adjust this to the correct URL
-
-  if (!attendanceFrame) {
-    console.error("Attendance frame not found");
-    await client.sendMessage(userJID, { text: "Failed to load attendance page." });
-    return;
-  }
-
-  console.log(`Selecting year: ${selectedYear}`);
+  // HANDLE SELECTIONS
+  console.log(`Selecting year: ${selectedYear}`); // DEBUGGING
   await attendanceFrame.select("select#yearDropdown", selectedYear);
-  console.log(`Selecting semester: ${selectedSemester}`);
+  console.log(`Selecting semester: ${selectedSemester}`); // DEBUGGING
   await attendanceFrame.select("select#semesterDropdown", selectedSemester);
 
-  console.log("Submitting attendance form...");
+  // SUBMIT ATTENDANCE FORM
+  console.log("Submitting attendance form..."); // DEBUGGING
   await attendanceFrame.click("button#submitAttendance");
-
   await attendanceFrame.waitForSelector("#attendanceData", { timeout: 5000 });
-  const attendanceData = await attendanceFrame.evaluate(() => {
-    return document.querySelector("#attendanceData").innerText;
-  });
-
-  await client.sendMessage(userJID, { text: `Your attendance data:\n${attendanceData}` });
 };
 
-// Helper function to wait for user response
-const waitForUserResponse = (user, client) => {
-  return new Promise((resolve) => {
-    const listener = async (update) => {
-      const messages = update.messages;
+// FUNCTION TO HANDLE INVALID COMMAND OR UNEXPECTED INPUTS
 
-      if (Array.isArray(messages) && messages.length > 0) {
-        for (const nextMessage of messages) {
-          if (nextMessage.key.remoteJid === user) {
-            if (nextMessage.message.conversation && nextMessage.message.conversation.trim() !== "") {
-              client.ev.off("messages.upsert", listener);
-              resolve(nextMessage);
-              break;
-            }
-          }
-        }
-      }
-    };
-
-    client.ev.on("messages.upsert", listener);
-  });
-};
-
-// Function to handle invalid command or unexpected inputs
-const handleInvalidCommand = async (message) => {
-  await client.sendMessage(message.key.remoteJid, { text: "Invalid command. Please try again." });
-};
 
 export default handleAttendance;

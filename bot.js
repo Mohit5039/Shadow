@@ -17,8 +17,10 @@ import handleOthers from './command/others.js';
 //import { handleInvalidCommand } from './command/invalidAndMeme.js';
 import { isDebugUser } from './DebugAccess.js';
 import { activateDebugMode } from './debug.js';
+import { state } from './command/attendance.js'; 
 
 const { makeWASocket, MessageMedia, useMultiFileAuthState } = pkg;
+
 
 async function startClient() {
     const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
@@ -55,8 +57,9 @@ async function startClient() {
     client.ev.on('creds.update', saveCreds);
 
     // Flag to indicate if we are in attendance mode
-    let attendanceMode = false; 
-
+    
+      
+  
     // Handle incoming messages
     client.ev.on('messages.upsert', async ({ messages }) => {
         const message = messages[0];
@@ -158,66 +161,53 @@ async function startClient() {
                         const handleUserResponse = async (nextMessage) => {
                             if (!nextMessage || !Array.isArray(nextMessage.messages) || nextMessage.messages.length === 0) {
                                 console.error('No messages found in nextMessage:', nextMessage);
-                                return; // Exit if no valid message is found
+                                return;
                             }
-
-                            const userMessage = nextMessage.messages[0]; // Access the first message
-                            const key = userMessage.key; // Get the message key
-
-                            // Check if the message comes from the same user
+                        
+                            const userMessage = nextMessage.messages[0];
+                            const key = userMessage.key;
+                        
                             if (key.remoteJid === message.key.remoteJid) {
-                                const command = userMessage.message?.conversation?.trim(); // Optional chaining to safely access conversation
+                                const command = userMessage.message?.conversation?.trim();
                                 if (!command) {
                                     console.error('Command is undefined or empty');
-                                    return; // Exit if command is not valid
+                                    return;
                                 }
-
-                                // Check if the command is in attendance mode
-                                if (attendanceMode) {
-                                    switch (command) {
-                                        case '1':
-                                        case '2':
-                                        case '3':
-                                        case '4':
-                                        case '5':
-                                            await handleAttendance(command, userMessage, frame, client); // Handle attendance-related inputs
-                                            return; // Exit to avoid triggering main features
-                                        case '0':
-                                            attendanceMode = false; // Reset attendance mode
-                                            await client.sendMessage(message.key.remoteJid, { text: 'Returning to main features...' });
-                                            return; // Exit to return to main features
-                                        default:
-                                            return;
-                                    }
-                                } else {
-                                    switch (command) {
-                                        case '1':
-                                            attendanceMode = true; // Set attendance mode to true
-                                            await handleAttendance(message, frame, client); // Pass client
-                                            break;
-                                        case '2':
-                                            await handleResult(message, client);
-                                            break;
-                                        case '3':
-                                            await handleAdmitCard(message, client);
-                                            break;
-                                        case '4':
-                                            await handleTimetable(message, client);
-                                            break;
-                                        case '5':
-                                            await handleOthers(message, client);
-                                            break;
-                                        case '0':
-                                            // Directly return to main features since '0' is valid in non-attendance mode
-                                            await client.sendMessage(message.key.remoteJid, { text: 'Returning to main features...' });
-                                            return;
-                                        default:
-                                            break;
-                                    }
+                        
+                                if (state.isInAttendanceMode) {
+                                    await handleAttendance(userMessage, frame, client);
+                                    return;
+                                }
+                        
+                                switch (command) {
+                                    case '1':
+                                        state.attendanceMode = true;
+                                        state.isInAttendanceMode = true;
+                                        await handleAttendance(userMessage, frame, client);
+                                        break;
+                                    case '2':
+                                        await handleResult(userMessage, client);
+                                        break;
+                                    case '3':
+                                        await handleAdmitCard(userMessage, client);
+                                        break;
+                                    case '4':
+                                        await handleTimetable(userMessage, client);
+                                        break;
+                                    case '5':
+                                        await handleOthers(userMessage, client);
+                                        break;
+                                    case '0':
+                                        state.attendanceMode = false;
+                                        state.isInAttendanceMode = false;
+                                        await client.sendMessage(message.key.remoteJid, { text: 'Returning to main features...' });
+                                        break;
+                                    default:
+                                        await client.sendMessage(message.key.remoteJid, { text: 'Invalid command. Please try again.' });
+                                        break;
                                 }
                             }
                         };
-
                         // Register the listener for the next message
                         const responseListener = (chatUpdate) => {
                             const messages = chatUpdate.messages;
