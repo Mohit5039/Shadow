@@ -14,13 +14,11 @@ import handleResult from './command/result.js';
 import handleAdmitCard from './command/admitCard.js';
 import handleTimetable from './command/timetable.js';
 import handleOthers from './command/others.js';
-//import { handleInvalidCommand } from './command/invalidAndMeme.js';
 import { isDebugUser } from './DebugAccess.js';
 import { activateDebugMode } from './debug.js';
 import { state } from './command/attendance.js'; 
 
 const { makeWASocket, MessageMedia, useMultiFileAuthState } = pkg;
-
 
 async function startClient() {
     const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
@@ -56,21 +54,43 @@ async function startClient() {
     // Save credentials when updated
     client.ev.on('creds.update', saveCreds);
 
-    // Flag to indicate if we are in attendance mode
-    
-      
-  
     // Handle incoming messages
     client.ev.on('messages.upsert', async ({ messages }) => {
-        const message = messages[0];
-        if (!message.message) return; // Check if message is not empty
+        if (!Array.isArray(messages) || messages.length === 0) {
+            console.log('Received empty messages array');
+            return;
+        }
 
-        console.log('Message received:', message.message.conversation);
+        const message = messages[0];
+        if (!message) {
+            console.log('Received undefined message');
+            return;
+        }
+
+        // Log the entire message object for debugging
+        console.log('Received message object:', JSON.stringify(message, null, 2));
+
+        // Extract the message content
+        let messageContent = '';
+        if (message.message?.conversation) {
+            messageContent = message.message.conversation;
+        } else if (message.message?.extendedTextMessage?.text) {
+            messageContent = message.message.extendedTextMessage.text;
+        } else if (message.message?.imageMessage?.caption) {
+            messageContent = message.message.imageMessage.caption;
+        }
+
+        if (!messageContent) {
+            console.log('Received empty message content');
+            return;
+        }
+
+        console.log('Message received:', messageContent);
 
         // Debug command
-        if (message.message.conversation === '/debug') {
+        if (messageContent === '/debug') {
             if (isDebugUser(message.key.remoteJid)) {
-                activateDebugMode(message); // Pass the message object
+                activateDebugMode(message);
                 await client.sendMessage(message.key.remoteJid, { text: 'Debug mode activated. Welcome!' });
                 console.log('Debug mode activated for:', message.key.remoteJid);
             } else {
@@ -81,15 +101,15 @@ async function startClient() {
         }
 
         // Respond to ping
-        if (message.message.conversation === 'ping') {
+        if (messageContent === 'ping') {
             await client.sendMessage(message.key.remoteJid, { text: 'pong' });
             console.log('Responding to ping...');
-            return; // Exit to avoid processing further
+            return;
         }
 
-        // Existing login command and other message handling...
-        if (message.message.conversation.startsWith('/login')) {
-            const [_, username, password] = message.message.conversation.split(' ');
+        // Login command
+        if (messageContent.startsWith('/login')) {
+            const [_, username, password] = messageContent.split(' ');
 
             if (!username || !password) {
                 await client.sendMessage(message.key.remoteJid, { text: 'Please provide both username and password.' });
@@ -97,7 +117,7 @@ async function startClient() {
             }
 
             try {
-                const browser = await chromium.launch({ headless: false }); // Use Playwright's Chromium
+                const browser = await chromium.launch({ headless: false });
                 const page = await browser.newPage();
 
                 console.log('Navigating to login page...');
@@ -115,7 +135,7 @@ async function startClient() {
                 });
 
                 console.log('Waiting for navigation to complete...');
-                await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 5000 }); // 5 seconds timeout
+                await page.waitForNavigation({ waitUntil: 'networkidle', timeout: 5000 });
 
                 console.log('Accessing the login frame...');
                 const frames = page.frames();
@@ -168,10 +188,12 @@ async function startClient() {
                             const key = userMessage.key;
                         
                             if (key.remoteJid === message.key.remoteJid) {
-                                const command = userMessage.message?.conversation?.trim();
+                                const command = userMessage.message?.conversation?.trim() 
+                                                || userMessage.message?.extendedTextMessage?.text?.trim(); 
+                                
                                 if (!command) {
                                     console.error('Command is undefined or empty');
-                                    return;
+                                    return; // Exit if no command
                                 }
                         
                                 if (state.isInAttendanceMode) {
@@ -179,6 +201,7 @@ async function startClient() {
                                     return;
                                 }
                         
+                                // Process valid commands
                                 switch (command) {
                                     case '1':
                                         state.attendanceMode = true;
@@ -203,11 +226,13 @@ async function startClient() {
                                         await client.sendMessage(message.key.remoteJid, { text: 'Returning to main features...' });
                                         break;
                                     default:
-                                        await client.sendMessage(message.key.remoteJid, { text: 'Invalid command. Please try again.' });
+                                        // Removed the message to the user for invalid commands
+                                        // Just wait for the next input
                                         break;
                                 }
                             }
                         };
+                        
                         // Register the listener for the next message
                         const responseListener = (chatUpdate) => {
                             const messages = chatUpdate.messages;
@@ -242,13 +267,13 @@ async function startClient() {
                 console.error('Error during login process:', error);
                 await client.sendMessage(message.key.remoteJid, { text: 'An error occurred during login. Please try again.' });
             }
-            return; // Exit to avoid further processing
+            return;
+        }
 
         // Handle other messages if necessary...
-        }
     });
 
-    return client; // Return the client instance
+    return client;
 }
 
-startClient(); // Start the client
+startClient();
